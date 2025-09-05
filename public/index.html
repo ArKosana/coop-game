@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Tic Tac Toe Online</title>
+  <style>
+    body { font-family: Arial, sans-serif; text-align: center; }
+    #board { display: grid; grid-template-columns: repeat(3, 100px); gap: 5px; margin: 20px auto; }
+    .cell {
+      width: 100px; height: 100px; font-size: 2em;
+      display: flex; align-items: center; justify-content: center;
+      background: #f0f0f0; border: 2px solid #333; cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <h1>🎮 Tic Tac Toe Online 🎮</h1>
+  <h2 id="status">Waiting for opponent...</h2>
+  <div id="board"></div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+    let mySymbol = "";
+    let myTurn = false;
+
+    const boardDiv = document.getElementById("board");
+    const status = document.getElementById("status");
+
+    // Build board
+    for (let i = 0; i < 9; i++) {
+      const cell = document.createElement("div");
+      cell.className = "cell";
+      cell.dataset.index = i;
+      cell.onclick = () => {
+        if (myTurn && cell.textContent === "") {
+          socket.emit("move", { index: i, symbol: mySymbol });
+        }
+      };
+      boardDiv.appendChild(cell);
+    }
+
+    socket.on("assignSymbol", (symbol) => {
+      mySymbol = symbol;
+      status.textContent = `You are ${symbol}`;
+    });
+
+    socket.on("turn", (turnSymbol) => {
+      myTurn = (turnSymbol === mySymbol);
+      status.textContent = myTurn ? "Your turn!" : "Opponent's turn...";
+    });
+
+    socket.on("updateBoard", (data) => {
+      const cell = document.querySelector(`[data-index='${data.index}']`);
+      cell.textContent = data.symbol;
+    });
+
+    socket.on("win", (winner) => {
+      status.textContent = winner === mySymbol ? "🎉 You win!" : "😢 You lose!";
+      myTurn = false;
+    });
+
+    socket.on("draw", () => {
+      status.textContent = "🤝 It's a draw!";
+      myTurn = false;
+    });
+  </script>
+</body>
+</html>
