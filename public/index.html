@@ -1,68 +1,151 @@
-<!DOCTYPE html>
-<html>
+<!doctype html>
+<html lang="en" data-theme="neon">
 <head>
-  <title>Tic Tac Toe Online</title>
-  <style>
-    body { font-family: Arial, sans-serif; text-align: center; }
-    #board { display: grid; grid-template-columns: repeat(3, 100px); gap: 5px; margin: 20px auto; }
-    .cell {
-      width: 100px; height: 100px; font-size: 2em;
-      display: flex; align-items: center; justify-content: center;
-      background: #f0f0f0; border: 2px solid #333; cursor: pointer;
-    }
-  </style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Immu ❤️ Cookie — Coop Hub</title>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DotGothic16&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="./style.css" />
 </head>
 <body>
-  <h1>🎮 Tic Tac Toe Online 🎮</h1>
-  <h2 id="status">Waiting for opponent...</h2>
-  <div id="board"></div>
+  <!-- top scrolling banner container -->
+  <div id="top-banner" class="banner hidden"><div id="banner-text" class="banner-text"></div></div>
+
+  <header class="brand">
+    <div class="brand-inner">
+      <!-- minimal header — Immu ❤️ Cookie only on home screen now -->
+      <span class="glow">Coop Hub</span>
+    </div>
+  </header>
+
+  <!-- Role Select -->
+  <section id="screen-role" class="screen centered">
+    <h1 class="title">Choose Your Side</h1>
+    <div class="role-grid">
+      <button id="btn-immu" class="btn neon big">Play as Immu</button>
+      <button id="btn-cookie" class="btn neon big">Play as Cookie</button>
+    </div>
+    <p class="hint">Only two players can join this room.</p>
+  </section>
+
+  <!-- Home Hub -->
+  <section id="screen-home" class="screen hidden">
+    <div class="home-wrap">
+      <aside class="chat-panel">
+        <h2 class="subhead">Chat</h2>
+        <div id="chat-log" class="chat-log"></div>
+        <div class="chat-input">
+          <input id="chat-text" type="text" placeholder="Type a message…" />
+          <button id="chat-send" class="btn neon">Send</button>
+        </div>
+      </aside>
+
+      <main class="hub">
+        <h1 id="home-title" class="title">Games</h1>
+
+        <div class="game-list">
+          <div class="game-card neon-glow">
+            <div>
+              <h3>Tic Tac Toe</h3>
+              <!-- replaced textual description with neon SVG art -->
+              <div class="neon-art" aria-hidden="true">
+                <!-- simple neon SVG -->
+                <svg width="160" height="80" viewBox="0 0 160 80" xmlns="http://www.w3.org/2000/svg">
+                  <rect x="0" y="0" width="160" height="80" rx="10" fill="none" stroke="#00ffff" stroke-opacity="0.12" />
+                  <g stroke-width="3" stroke-linecap="round">
+                    <line x1="40" y1="20" x2="40" y2="60" stroke="#39ff14" />
+                    <line x1="60" y1="20" x2="60" y2="60" stroke="#39ff14" />
+                    <line x1="80" y1="20" x2="80" y2="60" stroke="#ff00ff" />
+                    <line x1="100" y1="20" x2="100" y2="60" stroke="#ff00ff" />
+                  </g>
+                </svg>
+              </div>
+            </div>
+            <div class="card-actions">
+              <button id="start-ttt" class="btn neon">Request Play</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="scores neon-glow">
+          <h3>Scores</h3>
+          <div class="scores-row">
+            <span>Immu</span><span id="score-immu">0</span>
+          </div>
+          <div class="scores-row">
+            <span>Cookie</span><span id="score-cookie">0</span>
+          </div>
+          <div class="scores-row">
+            <span>Draws</span><span id="score-draws">0</span>
+          </div>
+        </div>
+
+        <div style="margin-top:18px; display:flex; justify-content:center;">
+          <button id="to-games-btn" class="btn neon">Games List</button>
+        </div>
+
+        <div style="margin-top:18px; text-align:center;" id="home-brand-inline">
+          <!-- Immu ❤️ Cookie only appears here on home -->
+          <span class="glow">Immu</span> <span class="heart">❤️</span> <span class="glow">Cookie</span>
+        </div>
+      </main>
+    </div>
+  </section>
+
+  <!-- Game List Screen -->
+  <section id="screen-games" class="screen hidden centered">
+    <h1 class="title">Available Games</h1>
+    <div class="games-list-plain">
+      <button id="play-ttt-from-list" class="btn neon big">Tic Tac Toe</button>
+    </div>
+    <div style="margin-top:14px;">
+      <button id="back-home" class="btn neon ghost">Back</button>
+    </div>
+  </section>
+
+  <!-- Game Detail Screen -->
+  <section id="screen-game-detail" class="screen hidden centered">
+    <h1 id="detail-title" class="title">Game</h1>
+    <div id="detail-body" class="lyric-box">
+      <p id="detail-rules">Rules will appear here.</p>
+    </div>
+    <div style="display:flex;gap:12px;">
+      <button id="request-play-btn" class="btn neon">Request Play</button>
+      <button id="detail-back" class="btn neon ghost">Back</button>
+    </div>
+  </section>
+
+  <!-- TicTacToe Screen -->
+  <section id="screen-ttt" class="screen hidden">
+    <div class="topbar">
+      <h1 id="ttt-title" class="title">Turn</h1>
+      <div class="right-actions">
+        <button id="btn-reset-ttt" class="btn neon">Request Restart</button>
+        <button id="btn-leave-ttt" class="btn neon danger">Leave Game</button>
+      </div>
+    </div>
+
+    <div id="ttt-grid" class="ttt-grid"></div>
+  </section>
+
+  <!-- Floating chat button (hidden on home) with unread badge -->
+  <button id="floating-chat" class="floating-chat btn neon hidden">
+    Chat <span id="chat-badge" class="chat-badge hidden">•</span>
+  </button>
+
+  <!-- Room full modal -->
+  <div id="modal" class="modal hidden">
+    <div class="modal-card neon-glow">
+      <h3>Room is full</h3>
+      <p>Only Immu and Cookie can play at a time. Please try again later.</p>
+      <button id="modal-close" class="btn neon">Okay</button>
+    </div>
+  </div>
+
+  <div id="confirm-root" class="hidden"></div>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script>
-    const socket = io();
-    let mySymbol = "";
-    let myTurn = false;
-
-    const boardDiv = document.getElementById("board");
-    const status = document.getElementById("status");
-
-    // Build board
-    for (let i = 0; i < 9; i++) {
-      const cell = document.createElement("div");
-      cell.className = "cell";
-      cell.dataset.index = i;
-      cell.onclick = () => {
-        if (myTurn && cell.textContent === "") {
-          socket.emit("move", { index: i, symbol: mySymbol });
-        }
-      };
-      boardDiv.appendChild(cell);
-    }
-
-    socket.on("assignSymbol", (symbol) => {
-      mySymbol = symbol;
-      status.textContent = `You are ${symbol}`;
-    });
-
-    socket.on("turn", (turnSymbol) => {
-      myTurn = (turnSymbol === mySymbol);
-      status.textContent = myTurn ? "Your turn!" : "Opponent's turn...";
-    });
-
-    socket.on("updateBoard", (data) => {
-      const cell = document.querySelector(`[data-index='${data.index}']`);
-      cell.textContent = data.symbol;
-    });
-
-    socket.on("win", (winner) => {
-      status.textContent = winner === mySymbol ? "🎉 You win!" : "😢 You lose!";
-      myTurn = false;
-    });
-
-    socket.on("draw", () => {
-      status.textContent = "🤝 It's a draw!";
-      myTurn = false;
-    });
-  </script>
+  <script type="module" src="./main.js"></script>
 </body>
 </html>
