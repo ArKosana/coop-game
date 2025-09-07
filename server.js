@@ -22,6 +22,54 @@ const readScores = () =>
 const writeScores = (obj) =>
   fs.writeFileSync(SCORES_PATH, JSON.stringify(obj, null, 2), "utf-8");
 
+// === UNO Card Definitions ===
+const UNO_COLORS = ['red', 'blue', 'green', 'yellow'];
+const UNO_VALUES = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'skip', 'reverse', 'draw2'];
+const UNO_SPECIALS = ['wild', 'wild4'];
+
+function createUnoDeck() {
+  let deck = [];
+  
+  // Add colored cards
+  UNO_COLORS.forEach(color => {
+    UNO_VALUES.forEach(value => {
+      deck.push({ type: 'number', color, value });
+      if (value !== '0') deck.push({ type: 'number', color, value });
+    });
+    
+    // Add action cards (2 of each per color)
+    ['skip', 'reverse', 'draw2'].forEach(action => {
+      deck.push({ type: 'action', color, value: action });
+      deck.push({ type: 'action', color, value: action });
+    });
+  });
+  
+  // Add wild cards (4 of each)
+  UNO_SPECIALS.forEach(special => {
+    for (let i = 0; i < 4; i++) {
+      deck.push({ type: 'wild', color: 'black', value: special });
+    }
+  });
+  
+  return shuffleArray(deck);
+}
+
+function shuffleArray(array) {
+  for (let i = array.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [array[i], array[j]] = [array[j], array[i]];
+  }
+  return array;
+}
+
+function canPlayCard(card, topCard, currentColor) {
+  if (card.type === 'wild') return true;
+  if (card.color === 'black') return true;
+  if (card.color === currentColor) return true;
+  if (card.value === topCard.value) return true;
+  return false;
+}
+
 // === rooms state ===
 const rooms = {};
 
@@ -31,6 +79,7 @@ app.get("/health", (_req, res) => res.json({ ok: true }));
 io.on("connection", (socket) => {
   let roomId = null;
   let myRole = null;
+  let turnTimers = {};
 
   function otherInfo(r) {
     if (!r) return { id: null, role: null };
@@ -64,6 +113,37 @@ io.on("connection", (socket) => {
     }
   }
 
+  // Start turn timer
+  function startTurnTimer(roomId, player) {
+    if (turnTimers[roomId]) {
+      clearTimeout(turnTimers[roomId]);
+    }
+    
+    turnTimers[roomId] = setTimeout(() => {
+      if (rooms[roomId] && rooms[roomId].uno && rooms[roomId].uno.active && 
+          rooms[roomId].uno.currentPlayer === player) {
+        // Time's up! Force draw 2 cards
+        const r = rooms[roomId];
+        for (let i = 0; i < 2; i++) {
+          if (r.uno.deck.length === 0) {
+            const topCard = r.uno.discardPile.pop();
+            r.uno.deck = shuffleArray(r.uno.discardPile);
+            r.uno.discardPile = [topCard];
+          }
+          r.uno.players[player].hand.push(r.uno.deck.pop());
+        }
+        
+        // Move to next player
+        r.uno.currentPlayer = getNextPlayer(r.uno);
+        io.to(roomId).emit("uno:timeout", { player });
+        io.to(roomId).emit("uno:state", r.uno);
+        
+        // Start timer for next player
+        startTurnTimer(roomId, r.uno.currentPlayer);
+      }
+    }, 60000); // 1 minute timer
+  }
+
   const leaveRoomCleanup = () => {
     if (!roomId || !rooms[roomId]) return;
     const r = rooms[roomId];
@@ -74,9 +154,14 @@ io.on("connection", (socket) => {
     if (wasImmu) r.players.immu = null;
     if (wasCookie) r.players.cookie = null;
 
+    // Clear timer
+    if (turnTimers[roomId]) {
+      clearTimeout(turnTimers[roomId]);
+      delete turnTimers[roomId];
+    }
+
     // If game was active and a player leaves, end the game
-    if (r.ttt.active) {
-      r.ttt.active = false;
+    if ((r.ttt && r.ttt.active) || (r.uno && r.uno.active)) {
       const whoLeft = wasImmu ? "Immu" : (wasCookie ? "Cookie" : "Someone");
       
       // Notify remaining player
@@ -102,9 +187,10 @@ io.on("connection", (socket) => {
       }
     }
 
-    // reset ephemeral ttt state when everyone leaves
+    // reset game state when everyone leaves
     if (!r.players.immu && !r.players.cookie) {
-      r.ttt = { board: Array(9).fill(null), turn: "immu", active: false };
+      if (r.ttt) r.ttt = { board: Array(9).fill(null), turn: "immu", active: false };
+      if (r.uno) r.uno = { active: false };
       r.pendingRequests = {};
       r.pendingFlags = { gameReq: null, restartReq: null, leaveReq: null };
     }
@@ -116,6 +202,7 @@ io.on("connection", (socket) => {
       rooms[roomId] = {
         players: { immu: null, cookie: null },
         ttt: { board: Array(9).fill(null), turn: "immu", active: false },
+        uno: { active: false },
         pendingRequests: {},
         pendingFlags: { gameReq: null, restartReq: null, leaveReq: null },
       };
@@ -261,19 +348,61 @@ io.on("connection", (socket) => {
       return;
     }
 
-    r.ttt = { board: Array(9).fill(null), turn: "immu", active: true };
-    const players = {
-      immu: r.players.immu ? r.players.immu : null,
-      cookie: r.players.cookie ? r.players.cookie : null,
-    };
+    // Start the appropriate game
+    if (pending.gameName === "tictactoe") {
+      r.ttt = { board: Array(9).fill(null), turn: "immu", active: true };
+      const players = {
+        immu: r.players.immu ? r.players.immu : null,
+        cookie: r.players.cookie ? r.players.cookie : null,
+      };
 
-    io.to(roomId).emit("game:start", {
-      players,
-      state: r.ttt,
-      gameName: pending.gameName,
-    });
+      io.to(roomId).emit("game:start", {
+        players,
+        state: r.ttt,
+        gameName: pending.gameName,
+      });
 
-    io.to(roomId).emit("ttt:state", r.ttt);
+      io.to(roomId).emit("ttt:state", r.ttt);
+    } else if (pending.gameName === "uno") {
+      // Initialize UNO game
+      const deck = createUnoDeck();
+      const players = {
+        immu: { hand: deck.splice(0, 7), ready: false, saidUno: false },
+        cookie: { hand: deck.splice(0, 7), ready: false, saidUno: false }
+      };
+      
+      const topCard = deck.pop();
+      // Ensure first card is not a wild card
+      while (topCard.color === 'black') {
+        deck.unshift(topCard);
+        deck.push(deck.pop());
+      }
+      
+      r.uno = {
+        active: true,
+        deck,
+        discardPile: [topCard],
+        players,
+        currentPlayer: "immu",
+        currentColor: topCard.color,
+        direction: 1, // 1 for clockwise, -1 for counterclockwise
+        status: "playing"
+      };
+
+      io.to(roomId).emit("game:start", {
+        players: {
+          immu: r.players.immu ? r.players.immu : null,
+          cookie: r.players.cookie ? r.players.cookie : null,
+        },
+        state: r.uno,
+        gameName: pending.gameName,
+      });
+
+      io.to(roomId).emit("uno:state", r.uno);
+      
+      // Start timer for first player
+      startTurnTimer(roomId, r.uno.currentPlayer);
+    }
   });
 
   // FIXED: Leave game handling
@@ -281,44 +410,41 @@ io.on("connection", (socket) => {
     if (!roomId || !rooms[roomId]) return;
     const r = rooms[roomId];
 
-    // if other player not connected, just reset local state & inform requester
     const other = (r.players.immu === socket.id) ? r.players.cookie : r.players.immu;
     if (!other) {
-      r.ttt = { board: Array(9).fill(null), turn: "immu", active: false };
+      if (r.ttt) r.ttt = { board: Array(9).fill(null), turn: "immu", active: false };
+      if (r.uno) r.uno = { active: false };
       socket.emit("game:left:ok");
       emitPresenceStatus(roomId);
       return;
     }
 
-    // prevent duplicate leave requests
     if (r.pendingFlags.leaveReq) {
       socket.emit("game:leavePending");
       return;
     }
 
-    // set a leave pending flag
     const leaveReqId = uuidv4();
     r.pendingFlags.leaveReq = leaveReqId;
     r.pendingRequests[leaveReqId] = { from: socket.id, type: "leave", ts: Date.now() };
 
     const whoReadable = myRole ? readableRole(myRole) : inferRoleName(r, socket.id);
     
-    // Notify both players about the leave
-    io.to(roomId).emit("game:playerLeft", { who: whoReadable, duringGame: r.ttt.active });
+    const duringGame = (r.ttt && r.ttt.active) || (r.uno && r.uno.active);
+    io.to(roomId).emit("game:playerLeft", { who: whoReadable, duringGame });
     
-    // Reset game state
-    r.ttt = { board: Array(9).fill(null), turn: "immu", active: false };
+    if (r.ttt) r.ttt = { board: Array(9).fill(null), turn: "immu", active: false };
+    if (r.uno) r.uno = { active: false };
     
-    // Send both players back to home
     io.to(roomId).emit("game:returnToList");
 
-    // clear pending leave after a short time
     setTimeout(() => {
       delete r.pendingRequests[leaveReqId];
       r.pendingFlags.leaveReq = null;
     }, 1500);
   });
 
+  // Tic Tac Toe handlers
   socket.on("ttt:start", () => {
     if (!roomId || !rooms[roomId]) return;
     const r = rooms[roomId];
@@ -415,11 +541,245 @@ io.on("connection", (socket) => {
     io.to(roomId).emit("ttt:state", r.ttt);
   });
 
+  // UNO Game Handlers
+  socket.on("uno:playCard", ({ cardIndex, chosenColor }) => {
+    if (!roomId || !rooms[roomId] || !myRole) return;
+    const r = rooms[roomId];
+    if (!r.uno || !r.uno.active || r.uno.currentPlayer !== myRole) return;
+
+    const playerHand = r.uno.players[myRole].hand;
+    if (cardIndex < 0 || cardIndex >= playerHand.length) return;
+
+    const card = playerHand[cardIndex];
+    const topCard = r.uno.discardPile[r.uno.discardPile.length - 1];
+
+    if (!canPlayCard(card, topCard, r.uno.currentColor)) return;
+
+    // Check UNO penalty - if player has 2 cards and didn't say UNO
+    if (playerHand.length === 2 && !r.uno.players[myRole].saidUno) {
+      // Penalty: draw 2 cards
+      for (let i = 0; i < 2; i++) {
+        if (r.uno.deck.length === 0) {
+          const topCard = r.uno.discardPile.pop();
+          r.uno.deck = shuffleArray(r.uno.discardPile);
+          r.uno.discardPile = [topCard];
+        }
+        playerHand.push(r.uno.deck.pop());
+      }
+      io.to(roomId).emit("uno:penalty", { player: myRole, reason: "forgot_uno" });
+    }
+
+    // Remove card from player's hand
+    const playedCard = playerHand.splice(cardIndex, 1)[0];
+    
+    // For wild cards, change the color to the chosen one
+    if (card.type === 'wild' && chosenColor) {
+      playedCard.color = chosenColor;
+    }
+    
+    r.uno.discardPile.push(playedCard);
+    r.uno.players[myRole].saidUno = false; // Reset UNO status after playing
+
+    // Handle special cards
+    if (card.type === 'wild') {
+      r.uno.currentColor = chosenColor || UNO_COLORS[Math.floor(Math.random() * UNO_COLORS.length)];
+      
+      if (card.value === 'wild4') {
+        // Draw 4 cards for next player
+        const nextPlayer = getNextPlayer(r.uno);
+        for (let i = 0; i < 4; i++) {
+          if (r.uno.deck.length === 0) {
+            // Reshuffle discard pile (except top card)
+            const topCard = r.uno.discardPile.pop();
+            r.uno.deck = shuffleArray(r.uno.discardPile);
+            r.uno.discardPile = [topCard];
+          }
+          r.uno.players[nextPlayer].hand.push(r.uno.deck.pop());
+        }
+      }
+    } else {
+      r.uno.currentColor = card.color;
+      
+      if (card.value === 'skip') {
+        // Skip next player's turn
+        r.uno.currentPlayer = getNextPlayer(r.uno);
+      } else if (card.value === 'reverse') {
+        // Reverse direction
+        r.uno.direction *= -1;
+      } else if (card.value === 'draw2') {
+        // Draw 2 cards for next player
+        const nextPlayer = getNextPlayer(r.uno);
+        for (let i = 0; i < 2; i++) {
+          if (r.uno.deck.length === 0) {
+            const topCard = r.uno.discardPile.pop();
+            r.uno.deck = shuffleArray(r.uno.discardPile);
+            r.uno.discardPile = [topCard];
+          }
+          r.uno.players[nextPlayer].hand.push(r.uno.deck.pop());
+        }
+      }
+    }
+
+    // Check for win
+    if (playerHand.length === 0) {
+      r.uno.active = false;
+      
+      const scores = readScores();
+      scores[roomId] ||= { immu: 0, cookie: 0, draws: 0 };
+      scores[roomId][myRole] += 1;
+      writeScores(scores);
+      
+      io.to(roomId).emit("uno:win", { winner: myRole });
+      io.to(roomId).emit("scores:update", scores[roomId]);
+      
+      // Clear timer
+      if (turnTimers[roomId]) {
+        clearTimeout(turnTimers[roomId]);
+        delete turnTimers[roomId];
+      }
+      
+      setTimeout(() => {
+        io.to(roomId).emit("game:returnToList");
+      }, 3000);
+      return;
+    }
+
+    // Move to next player
+    r.uno.currentPlayer = getNextPlayer(r.uno);
+    
+    // Reset UNO status for next player
+    r.uno.players[r.uno.currentPlayer].saidUno = false;
+
+    // Start timer for next player
+    startTurnTimer(roomId, r.uno.currentPlayer);
+
+    io.to(roomId).emit("uno:state", r.uno);
+  });
+
+  socket.on("uno:drawCard", () => {
+    if (!roomId || !rooms[roomId] || !myRole) return;
+    const r = rooms[roomId];
+    if (!r.uno || !r.uno.active || r.uno.currentPlayer !== myRole) return;
+
+    if (r.uno.deck.length === 0) {
+      // Reshuffle discard pile (except top card)
+      const topCard = r.uno.discardPile.pop();
+      r.uno.deck = shuffleArray(r.uno.discardPile);
+      r.uno.discardPile = [topCard];
+    }
+
+    r.uno.players[myRole].hand.push(r.uno.deck.pop());
+    r.uno.currentPlayer = getNextPlayer(r.uno);
+    
+    // Reset UNO status for next player
+    r.uno.players[r.uno.currentPlayer].saidUno = false;
+
+    // Start timer for next player
+    startTurnTimer(roomId, r.uno.currentPlayer);
+
+    io.to(roomId).emit("uno:state", r.uno);
+  });
+
+  socket.on("uno:sayUno", () => {
+    if (!roomId || !rooms[roomId] || !myRole) return;
+    const r = rooms[roomId];
+    if (!r.uno || !r.uno.active) return;
+
+    // Only allow saying UNO when player has 2 cards
+    if (r.uno.players[myRole].hand.length === 2) {
+      r.uno.players[myRole].saidUno = true;
+      io.to(roomId).emit("uno:saidUno", { player: myRole });
+    }
+  });
+
+  socket.on("uno:requestRestart", () => {
+    if (!roomId || !rooms[roomId]) return;
+    const r = rooms[roomId];
+    const other = (r.players.immu === socket.id) ? r.players.cookie : r.players.immu;
+    if (!other) {
+      socket.emit("uno:restartFailed", { reason: "no_opponent" });
+      return;
+    }
+
+    if (r.pendingFlags.restartReq) {
+      socket.emit("uno:restartPending");
+      return;
+    }
+
+    const reqId = uuidv4();
+    r.pendingRequests[reqId] = { from: socket.id, type: "restart", ts: Date.now() };
+    r.pendingFlags.restartReq = reqId;
+
+    io.to(other).emit("uno:restartOffer", {
+      rid: reqId,
+      fromId: socket.id,
+      fromRole: myRole,
+    });
+
+    socket.emit("uno:restartPending");
+  });
+
+  socket.on("uno:restartResponse", ({ rid, accept }) => {
+    if (!roomId || !rooms[roomId]) return;
+    const r = rooms[roomId];
+    const pending = r.pendingRequests[rid];
+    if (!pending) return;
+
+    delete r.pendingRequests[rid];
+    r.pendingFlags.restartReq = null;
+
+    if (!accept) {
+      io.to(pending.from).emit("uno:restartDenied", { by: myRole || inferRoleName(r, socket.id) });
+      return;
+    }
+
+    // Restart UNO game
+    const deck = createUnoDeck();
+    r.uno.players.immu = { hand: deck.splice(0, 7), ready: false, saidUno: false };
+    r.uno.players.cookie = { hand: deck.splice(0, 7), ready: false, saidUno: false };
+    
+    const topCard = deck.pop();
+    while (topCard.color === 'black') {
+      deck.unshift(topCard);
+      deck.push(deck.pop());
+    }
+    
+    r.uno.deck = deck;
+    r.uno.discardPile = [topCard];
+    r.uno.currentPlayer = "immu";
+    r.uno.currentColor = topCard.color;
+    r.uno.direction = 1;
+    r.uno.status = "playing";
+
+    // Clear existing timer and start new one
+    if (turnTimers[roomId]) {
+      clearTimeout(turnTimers[roomId]);
+    }
+    startTurnTimer(roomId, r.uno.currentPlayer);
+
+    io.to(roomId).emit("uno:restartAccepted");
+    io.to(roomId).emit("uno:state", r.uno);
+  });
+
+  function getNextPlayer(unoState) {
+    const players = ['immu', 'cookie'];
+    const currentIndex = players.indexOf(unoState.currentPlayer);
+    let nextIndex = (currentIndex + unoState.direction) % players.length;
+    if (nextIndex < 0) nextIndex = players.length - 1;
+    return players[nextIndex];
+  }
+
   socket.on("disconnect", () => {
     if (roomId && rooms[roomId]) {
       const r = rooms[roomId];
       r.pendingRequests = {};
       r.pendingFlags = { gameReq: null, restartReq: null, leaveReq: null };
+      
+      // Clear timer
+      if (turnTimers[roomId]) {
+        clearTimeout(turnTimers[roomId]);
+        delete turnTimers[roomId];
+      }
       
       const otherSocketId = (r.players.immu === socket.id && r.players.cookie) ||
                            (r.players.cookie === socket.id && r.players.immu);
