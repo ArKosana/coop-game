@@ -413,54 +413,54 @@ body {
 /* responsive */
 @media (max-width: 768px) {
   .home-wrap { 
-    grid-template-columns: 1fr; 
-    gap: 15px;
+  grid-template-columns: 1fr; 
+  gap: 15px;
   }
   
   .title {
-    font-size: 24px;
+  font-size: 24px;
   }
   
   .btn.big {
-    padding: 12px 18px;
-    font-size: 14px;
+  padding: 12px 18px;
+  font-size: 14px;
   }
   
   .ttt-grid {
-    width: min(95vw, 350px);
+  width: min(95vw, 350px);
   }
   
   .neon-svg {
-    width: 120px;
-    height: 120px;
+  width: 120px;
+  height: 120px;
   }
 }
 
 @media (max-width: 480px) {
   .screen {
-    padding: 10px;
+  padding: 10px;
   }
   
   .title {
-    font-size: 22px;
+  font-size: 22px;
   }
   
   .role-grid {
-    flex-direction: column;
-    align-items: center;
+  flex-direction: column;
+  align-items: center;
   }
   
   .topbar {
-    flex-direction: column;
-    gap: 10px;
+  flex-direction: column;
+  gap: 10px;
   }
   
   .ttt-grid {
-    gap: 8px;
+  gap: 8px;
   }
   
   .ttt-cell {
-    border-radius: 12px;
+  border-radius: 12px;
   }
 }
 
@@ -616,19 +616,258 @@ body {
   50% { transform: rotate(15deg); }
 }
 
-/* If you want to use the CSS animation instead of a GIF, replace the img tag with this: */
-/*
-<div class="neon-stickman">
-  <div class="stickman-body">
-    <div class="stickman-head"></div>
-    <div class="stickman-arms">
-      <div class="stickman-arm"></div>
-      <div class="stickman-arm"></div>
-    </div>
-    <div class="stickman-legs">
-      <div class="stickman-leg"></div>
-      <div class="stickman-leg"></div>
-    </div>
-  </div>
-</div>
-*/
+/* UNO Game Styles */
+.uno-game-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  max-width: 800px;
+  margin: 0 auto;
+  gap: 20px;
+}
+
+.opponent-area, .game-area, .player-area {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.opponent-hand {
+  padding: 10px;
+}
+
+.opponent-cards {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.card-count {
+  font-size: 16px;
+  color: var(--muted);
+}
+
+.turn-timer {
+  font-size: 18px;
+  color: var(--neon1);
+  text-shadow: 0 0 8px var(--neon1);
+  font-family: 'DotGothic16', monospace;
+}
+
+.turn-timer.time-warning {
+  color: var(--danger);
+  text-shadow: 0 0 8px var(--danger);
+  animation: pulse 0.5s infinite alternate;
+}
+
+.game-area {
+  display: flex;
+  gap: 30px;
+  margin: 20px 0;
+}
+
+.discard-pile, .deck {
+  width: 80px;
+  height: 120px;
+  border-radius: 8px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  cursor: pointer;
+}
+
+.deck {
+  background: none;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  box-shadow: 0 0 15px rgba(255, 165, 0, 0.7);
+  overflow: hidden;
+  transition: transform 0.2s ease;
+}
+
+.deck:hover {
+  transform: scale(1.05);
+  box-shadow: 0 0 20px rgba(255, 165, 0, 0.9);
+}
+
+.deck-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.player-area {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.player-info {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 10px;
+}
+
+.player-turn {
+  font-size: 18px;
+  color: var(--neon1);
+  text-shadow: 0 0 8px var(--neon1);
+}
+
+.player-hand {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  max-width: 600px;
+  min-height: 140px;
+}
+
+/* UNO Cards */
+.card {
+  width: 60px;
+  height: 90px;
+  border-radius: 6px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  cursor: pointer;
+  transition: transform 0.2s ease;
+  position: relative;
+}
+
+.card.playable:hover {
+  transform: translateY(-10px);
+}
+
+.card.back {
+  background: linear-gradient(45deg, #ff6b6b, #ff9f43);
+  box-shadow: 0 0 10px rgba(255, 107, 107, 0.7);
+}
+
+.card.red { background: linear-gradient(135deg, #ff6b6b, #ff9f43); border: 2px solid #ff6b6b; }
+.card.blue { background: linear-gradient(135deg, #4834d4, #686de0); border: 2px solid #4834d4; }
+.card.green { background: linear-gradient(135deg, #badc58, #6ab04c); border: 2px solid #badc58; }
+.card.yellow { background: linear-gradient(135deg, #f9ca24, #f6e58d); border: 2px solid #f9ca24; }
+.card.black { background: linear-gradient(135deg, #2d3436, #636e72); border: 2px solid #2d3436; }
+
+.card-inner {
+  width: 50px;
+  height: 80px;
+  background: white;
+  border-radius: 4px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-weight: bold;
+  font-size: 20px;
+}
+
+.card.red .card-inner { color: #ff6b6b; }
+.card.blue .card-inner { color: #4834d4; }
+.card.green .card-inner { color: #6ab04c; }
+.card.yellow .card-inner { color: #f9ca24; }
+.card.black .card-inner { color: #2d3436; }
+
+.card.wild .card-inner {
+  background: linear-gradient(45deg, #ff6b6b, #4834d4, #6ab04c, #f9ca24);
+  color: white;
+}
+
+/* Color Picker */
+.color-picker {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: var(--panel);
+  padding: 20px;
+  border-radius: 12px;
+  border: 2px solid var(--neon1);
+  box-shadow: 0 0 20px rgba(0, 255, 255, 0.3);
+  z-index: 100;
+}
+
+.color-picker h3 {
+  margin: 0 0 15px 0;
+  text-align: center;
+}
+
+.color-options {
+  display: flex;
+  gap: 15px;
+  justify-content: center;
+}
+
+.color-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 2px solid white;
+  cursor: pointer;
+  transition: transform 0.2s ease;
+}
+
+.color-btn:hover {
+  transform: scale(1.1);
+}
+
+.color-btn.red { background: #ff6b6b; }
+.color-btn.blue { background: #4834d4; }
+.color-btn.green { background: #6ab04c; }
+.color-btn.yellow { background: #f9ca24; }
+
+/* UNO Button spacing */
+#btn-say-uno {
+  margin-top: 20px;
+  opacity: 0.9;
+  transition: all 0.3s ease;
+}
+
+#btn-say-uno:hover {
+  opacity: 1;
+  transform: translateY(-2px);
+}
+
+/* Responsive UNO */
+@media (max-width: 768px) {
+  .card {
+    width: 50px;
+    height: 75px;
+  }
+  
+  .card-inner {
+    width: 40px;
+    height: 65px;
+    font-size: 16px;
+  }
+  
+  .discard-pile, .deck {
+    width: 60px;
+    height: 90px;
+  }
+  
+  .player-hand {
+    max-width: 100%;
+    gap: 5px;
+  }
+}
+
+@media (max-width: 480px) {
+  .card {
+    width: 40px;
+    height: 60px;
+  }
+  
+  .card-inner {
+    width: 30px;
+    height: 50px;
+    font-size: 14px;
+  }
+  
+  .game-area {
+    gap: 15px;
+  }
+}
