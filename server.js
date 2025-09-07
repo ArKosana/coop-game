@@ -1,3 +1,4 @@
+// server.js
 const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
@@ -31,20 +32,81 @@ io.on("connection", (socket) => {
   let roomId = null;
   let myRole = null;
 
+  function otherInfo(r) {
+    if (!r) return { id: null, role: null };
+    if (r.players.immu === socket.id) return { id: r.players.cookie, role: "cookie" };
+    if (r.players.cookie === socket.id) return { id: r.players.immu, role: "immu" };
+    return { id: null, role: null };
+  }
+
+  function emitPresenceStatus(rid) {
+    if (!rooms[rid]) return;
+    const r = rooms[rid];
+    const immuOnline = !!r.players.immu;
+    const cookieOnline = !!r.players.cookie;
+    io.to(rid).emit("presence:update", { immuOnline, cookieOnline });
+
+    if (r.players.immu) {
+      const otherConnected = !!r.players.cookie;
+      io.to(r.players.immu).emit("presence:status", {
+        you: "immu",
+        otherConnected,
+        otherName: otherConnected ? "Cookie" : "Cookie"
+      });
+    }
+    if (r.players.cookie) {
+      const otherConnected = !!r.players.immu;
+      io.to(r.players.cookie).emit("presence:status", {
+        you: "cookie",
+        otherConnected,
+        otherName: otherConnected ? "Immu" : "Immu"
+      });
+    }
+  }
+
   const leaveRoomCleanup = () => {
     if (!roomId || !rooms[roomId]) return;
     const r = rooms[roomId];
-    if (r.players.immu === socket.id) r.players.immu = null;
-    if (r.players.cookie === socket.id) r.players.cookie = null;
 
-    io.to(roomId).emit("presence:update", {
-      immuOnline: !!r.players.immu,
-      cookieOnline: !!r.players.cookie,
-    });
+    const wasImmu = r.players.immu === socket.id;
+    const wasCookie = r.players.cookie === socket.id;
 
+    if (wasImmu) r.players.immu = null;
+    if (wasCookie) r.players.cookie = null;
+
+    // If game was active and a player leaves, end the game
+    if (r.ttt.active) {
+      r.ttt.active = false;
+      const whoLeft = wasImmu ? "Immu" : (wasCookie ? "Cookie" : "Someone");
+      
+      // Notify remaining player
+      const remainingId = r.players.immu || r.players.cookie;
+      if (remainingId) {
+        io.to(remainingId).emit("game:playerLeft", { who: whoLeft, duringGame: true });
+        io.to(remainingId).emit("game:returnToList");
+      }
+    }
+
+    // notify remaining player that opponent left
+    if (roomId && rooms[roomId]) {
+      const remainingId = r.players.immu || r.players.cookie;
+      const whoLeft = wasImmu ? "Immu" : (wasCookie ? "Cookie" : "Someone");
+      if (remainingId) {
+        io.to(remainingId).emit("opponent:left", { who: whoLeft });
+        emitPresenceStatus(roomId);
+      } else {
+        io.to(roomId).emit("presence:update", {
+          immuOnline: !!r.players.immu,
+          cookieOnline: !!r.players.cookie,
+        });
+      }
+    }
+
+    // reset ephemeral ttt state when everyone leaves
     if (!r.players.immu && !r.players.cookie) {
       r.ttt = { board: Array(9).fill(null), turn: "immu", active: false };
       r.pendingRequests = {};
+      r.pendingFlags = { gameReq: null, restartReq: null, leaveReq: null };
     }
   };
 
@@ -55,6 +117,7 @@ io.on("connection", (socket) => {
         players: { immu: null, cookie: null },
         ttt: { board: Array(9).fill(null), turn: "immu", active: false },
         pendingRequests: {},
+        pendingFlags: { gameReq: null, restartReq: null, leaveReq: null },
       };
     }
     const r = rooms[roomId];
@@ -98,22 +161,17 @@ io.on("connection", (socket) => {
         // ignore
       }
 
-      io.to(roomId).emit("presence:update", {
-        immuOnline: !!r.players.immu,
-        cookieOnline: !!r.players.cookie,
-      });
+      emitPresenceStatus(roomId);
 
       const scores = readScores();
       const s = scores[roomId] || { immu: 0, cookie: 0, draws: 0 };
       socket.emit("scores:update", s);
     } else {
       socket.emit("role:choose", availability);
+      emitPresenceStatus(roomId);
     }
 
-    io.to(roomId).emit("presence:update", {
-      immuOnline: !!r.players.immu,
-      cookieOnline: !!r.players.cookie,
-    });
+    emitPresenceStatus(roomId);
   });
 
   socket.on("role:pick", ({ role }) => {
@@ -140,41 +198,42 @@ io.on("connection", (socket) => {
       }
     }
 
-    io.to(roomId).emit("presence:update", {
-      immuOnline: !!r.players.immu,
-      cookieOnline: !!r.players.cookie,
-    });
+    emitPresenceStatus(roomId);
 
     const scores = readScores();
     const s = scores[roomId] || { immu: 0, cookie: 0, draws: 0 };
     io.to(roomId).emit("scores:update", s);
   });
 
-  // === chat ===
   socket.on("chat:send", ({ text }) => {
     if (!roomId) return;
     const payload = { text, ts: Date.now(), role: myRole || "spectator" };
     io.to(roomId).emit("chat:msg", payload);
   });
 
-  // === Game selection flow ===
   socket.on("game:selectionRequest", ({ gameName }) => {
-    if (!roomId || !rooms[roomId]) return;
+    if (!roomId || !rooms[roomId]) {
+      socket.emit("game:selectionFailed", { reason: "not_in_room" });
+      return;
+    }
     const r = rooms[roomId];
 
-    const otherSocketId =
-      (r.players.immu === socket.id && r.players.cookie) ||
-      (r.players.cookie === socket.id && r.players.immu);
-
-    if (!otherSocketId) {
+    if (r.pendingFlags.gameReq) {
       socket.emit("game:selectionPending");
+      return;
+    }
+
+    const other = (r.players.immu === socket.id) ? r.players.cookie : r.players.immu;
+    if (!other) {
+      socket.emit("game:selectionFailed", { reason: "no_opponent" });
       return;
     }
 
     const reqId = uuidv4();
     r.pendingRequests[reqId] = { from: socket.id, gameName, ts: Date.now() };
+    r.pendingFlags.gameReq = reqId;
 
-    io.to(otherSocketId).emit("game:selectionOffer", {
+    io.to(other).emit("game:selectionOffer", {
       reqId,
       fromId: socket.id,
       fromRole: myRole,
@@ -188,10 +247,14 @@ io.on("connection", (socket) => {
     if (!roomId || !rooms[roomId]) return;
     const r = rooms[roomId];
     const pending = r.pendingRequests[reqId];
-    if (!pending) return;
+    if (!pending) {
+      socket.emit("game:selectionFailed", { reason: "no_pending" });
+      return;
+    }
 
     const requester = pending.from;
     delete r.pendingRequests[reqId];
+    r.pendingFlags.gameReq = null;
 
     if (!accept) {
       io.to(requester).emit("game:selectionDenied", { by: myRole || inferRoleName(r, socket.id) });
@@ -209,26 +272,60 @@ io.on("connection", (socket) => {
       state: r.ttt,
       gameName: pending.gameName,
     });
+
+    io.to(roomId).emit("ttt:state", r.ttt);
   });
 
-  // Leave game (notify readable name)
-  socket.on("game:leave", ({ confirm }) => {
+  // FIXED: Leave game handling
+  socket.on("game:leave", () => {
     if (!roomId || !rooms[roomId]) return;
     const r = rooms[roomId];
 
+    // if other player not connected, just reset local state & inform requester
+    const other = (r.players.immu === socket.id) ? r.players.cookie : r.players.immu;
+    if (!other) {
+      r.ttt = { board: Array(9).fill(null), turn: "immu", active: false };
+      socket.emit("game:left:ok");
+      emitPresenceStatus(roomId);
+      return;
+    }
+
+    // prevent duplicate leave requests
+    if (r.pendingFlags.leaveReq) {
+      socket.emit("game:leavePending");
+      return;
+    }
+
+    // set a leave pending flag
+    const leaveReqId = uuidv4();
+    r.pendingFlags.leaveReq = leaveReqId;
+    r.pendingRequests[leaveReqId] = { from: socket.id, type: "leave", ts: Date.now() };
+
     const whoReadable = myRole ? readableRole(myRole) : inferRoleName(r, socket.id);
-
-    io.to(roomId).emit("game:playerLeft", {
-      who: whoReadable,
-    });
-
+    
+    // Notify both players about the leave
+    io.to(roomId).emit("game:playerLeft", { who: whoReadable, duringGame: r.ttt.active });
+    
+    // Reset game state
     r.ttt = { board: Array(9).fill(null), turn: "immu", active: false };
+    
+    // Send both players back to home
+    io.to(roomId).emit("game:returnToList");
+
+    // clear pending leave after a short time
+    setTimeout(() => {
+      delete r.pendingRequests[leaveReqId];
+      r.pendingFlags.leaveReq = null;
+    }, 1500);
   });
 
-  // === TicTacToe ===
   socket.on("ttt:start", () => {
     if (!roomId || !rooms[roomId]) return;
     const r = rooms[roomId];
+    if (!r.players.immu || !r.players.cookie) {
+      socket.emit("ttt:startFailed", { reason: "no_opponent" });
+      return;
+    }
     r.ttt = { board: Array(9).fill(null), turn: "immu", active: true };
     io.to(roomId).emit("ttt:state", r.ttt);
   });
@@ -257,40 +354,45 @@ io.on("connection", (socket) => {
       if (hasWin) {
         scores[roomId][myRole] += 1;
         writeScores(scores);
-        io.to(roomId).emit("scores:update", scores[roomId]);
-        io.to(roomId).emit("ttt:over", { winner: myRole, board });
+        io.to(roomId).emit("ttt:win", { winner: myRole, board });
       } else {
         scores[roomId].draws += 1;
         writeScores(scores);
-        io.to(roomId).emit("scores:update", scores[roomId]);
-        io.to(roomId).emit("ttt:over", { draw: true, board });
+        io.to(roomId).emit("ttt:draw", { board });
       }
 
-      setTimeout(() => {
-        io.to(roomId).emit("game:returnToList");
-        r.ttt = { board: Array(9).fill(null), turn: "immu", active: false };
-      }, 2600);
+      io.to(roomId).emit("scores:update", scores[roomId]);
     } else {
-      r.ttt.turn = (turn === "immu") ? "cookie" : "immu";
-      io.to(roomId).emit("ttt:state", r.ttt);
+      r.ttt.turn = myRole === "immu" ? "cookie" : "immu";
     }
+
+    io.to(roomId).emit("ttt:state", r.ttt);
   });
 
   socket.on("ttt:requestRestart", () => {
-    if (!roomId || !rooms[roomId] || !myRole) return;
+    if (!roomId || !rooms[roomId]) return;
     const r = rooms[roomId];
-
-    const otherSocketId = (r.players.immu === socket.id && r.players.cookie) ||
-                          (r.players.cookie === socket.id && r.players.immu);
-
-    if (!otherSocketId) {
-      socket.emit("ttt:restartDenied", { reason: "No opponent" });
+    const other = (r.players.immu === socket.id) ? r.players.cookie : r.players.immu;
+    if (!other) {
+      socket.emit("ttt:restartFailed", { reason: "no_opponent" });
       return;
     }
 
-    const rid = uuidv4();
-    r.pendingRequests[rid] = { from: socket.id, type: "restart", ts: Date.now() };
-    io.to(otherSocketId).emit("ttt:restartOffer", { rid, fromRole: myRole });
+    if (r.pendingFlags.restartReq) {
+      socket.emit("ttt:restartPending");
+      return;
+    }
+
+    const reqId = uuidv4();
+    r.pendingRequests[reqId] = { from: socket.id, type: "restart", ts: Date.now() };
+    r.pendingFlags.restartReq = reqId;
+
+    io.to(other).emit("ttt:restartOffer", {
+      rid: reqId,
+      fromId: socket.id,
+      fromRole: myRole,
+    });
+
     socket.emit("ttt:restartPending");
   });
 
@@ -299,7 +401,9 @@ io.on("connection", (socket) => {
     const r = rooms[roomId];
     const pending = r.pendingRequests[rid];
     if (!pending) return;
+
     delete r.pendingRequests[rid];
+    r.pendingFlags.restartReq = null;
 
     if (!accept) {
       io.to(pending.from).emit("ttt:restartDenied", { by: myRole || inferRoleName(r, socket.id) });
@@ -307,40 +411,41 @@ io.on("connection", (socket) => {
     }
 
     r.ttt = { board: Array(9).fill(null), turn: "immu", active: true };
-    io.to(roomId).emit("ttt:state", r.ttt);
     io.to(roomId).emit("ttt:restartAccepted");
-  });
-
-  socket.on("ttt:reset", () => {
-    if (!roomId || !rooms[roomId]) return;
-    const r = rooms[roomId];
-    r.ttt = { board: Array(9).fill(null), turn: "immu", active: true };
     io.to(roomId).emit("ttt:state", r.ttt);
   });
 
-  socket.on("disconnect", () => leaveRoomCleanup());
-  socket.on("room:leave", () => {
+  socket.on("disconnect", () => {
+    if (roomId && rooms[roomId]) {
+      const r = rooms[roomId];
+      r.pendingRequests = {};
+      r.pendingFlags = { gameReq: null, restartReq: null, leaveReq: null };
+      
+      const otherSocketId = (r.players.immu === socket.id && r.players.cookie) ||
+                           (r.players.cookie === socket.id && r.players.immu);
+      
+      if (otherSocketId) {
+        io.to(otherSocketId).emit("request:cleared");
+      }
+    }
+    
     leaveRoomCleanup();
-    socket.leave(roomId);
-    roomId = null;
-    myRole = null;
+    if (roomId && rooms[roomId]) {
+      emitPresenceStatus(roomId);
+    }
   });
-});
 
-// helpers
-function readableRole(r) {
-  if (r === "immu") return "Immu";
-  if (r === "cookie") return "Cookie";
-  return String(r || "someone");
-}
-function inferRoleName(roomObj, sid) {
-  if (!roomObj) return "someone";
-  if (roomObj.players.immu === sid) return "Immu";
-  if (roomObj.players.cookie === sid) return "Cookie";
-  return "someone";
-}
+  function inferRoleName(r, id) {
+    if (r.players.immu === id) return "Immu";
+    if (r.players.cookie === id) return "Cookie";
+    return "Unknown";
+  }
+  function readableRole(role) {
+    return role === "immu" ? "Immu" : "Cookie";
+  }
+});
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-  console.log(`→ http://localhost:${PORT}`);
+  console.log(`Immu ❤️ Cookie server running on port ${PORT}`);
 });
