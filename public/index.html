@@ -14,7 +14,6 @@
 
   <header class="brand">
     <div class="brand-inner">
-      <!-- minimal header — Immu ❤️ Cookie only on home screen now -->
       <span class="glow">Coop Hub</span>
     </div>
   </header>
@@ -42,28 +41,42 @@
       </aside>
 
       <main class="hub">
+        <!-- this title will be updated to "Hi Immu" or "Hi Cookie" -->
         <h1 id="home-title" class="title">Games</h1>
 
+        <!-- presence / waiting indicator for the other player -->
+        <div id="presence-status" class="lyric-box neon-glow">
+          <strong id="presence-line">Checking presence…</strong>
+          <div id="presence-sub" style="margin-top:8px;color:var(--muted);font-size:14px;">Other player status will appear here.</div>
+        </div>
+
+        <!-- Animated Neon Art -->
+        <div id="non-art" class="neon-art" aria-hidden="true">
+          <img src="./assets/neon-stickman.gif" alt="Neon Stickman Animation" style="width: 180px; height: 180px;">
+        </div>
+
+        <!-- Animated Neon Art - CSS Version 
+<div id="neon-art" class="neon-art" aria-hidden="true">
+  <div class="neon-stickman">
+    <div class="stickman-body">
+      <div class="stickman-head"></div>
+      <div class="stickman-arms">
+        <div class="stickman-arm"></div>
+        <div class="stickman-arm"></div>
+      </div>
+      <div class="stickman-legs">
+        <div class="stickman-leg"></div>
+        <div class="stickman-leg"></div>
+      </div>
+    </div>
+  </div>
+</div> -->
+
+        <!-- Game List Button Only -->
         <div class="game-list">
           <div class="game-card neon-glow">
-            <div>
-              <h3>Tic Tac Toe</h3>
-              <!-- replaced textual description with neon SVG art -->
-              <div class="neon-art" aria-hidden="true">
-                <!-- simple neon SVG -->
-                <svg width="160" height="80" viewBox="0 0 160 80" xmlns="http://www.w3.org/2000/svg">
-                  <rect x="0" y="0" width="160" height="80" rx="10" fill="none" stroke="#00ffff" stroke-opacity="0.12" />
-                  <g stroke-width="3" stroke-linecap="round">
-                    <line x1="40" y1="20" x2="40" y2="60" stroke="#39ff14" />
-                    <line x1="60" y1="20" x2="60" y2="60" stroke="#39ff14" />
-                    <line x1="80" y1="20" x2="80" y2="60" stroke="#ff00ff" />
-                    <line x1="100" y1="20" x2="100" y2="60" stroke="#ff00ff" />
-                  </g>
-                </svg>
-              </div>
-            </div>
-            <div class="card-actions">
-              <button id="start-ttt" class="btn neon">Request Play</button>
+            <div class="card-actions" style="width: 100%; display: flex; justify-content: center;">
+              <button id="to-games-btn" class="btn neon big">Games List</button>
             </div>
           </div>
         </div>
@@ -79,10 +92,6 @@
           <div class="scores-row">
             <span>Draws</span><span id="score-draws">0</span>
           </div>
-        </div>
-
-        <div style="margin-top:18px; display:flex; justify-content:center;">
-          <button id="to-games-btn" class="btn neon">Games List</button>
         </div>
 
         <div style="margin-top:18px; text-align:center;" id="home-brand-inline">
