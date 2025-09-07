@@ -51,26 +51,9 @@
         </div>
 
         <!-- Animated Neon Art -->
-        <div id="non-art" class="neon-art" aria-hidden="true">
+        <div id="neon-art" class="neon-art" aria-hidden="true">
           <img src="./assets/neon-stickman.gif" alt="Neon Stickman Animation" style="width: 180px; height: 180px;">
         </div>
-
-        <!-- Animated Neon Art - CSS Version 
-<div id="neon-art" class="neon-art" aria-hidden="true">
-  <div class="neon-stickman">
-    <div class="stickman-body">
-      <div class="stickman-head"></div>
-      <div class="stickman-arms">
-        <div class="stickman-arm"></div>
-        <div class="stickman-arm"></div>
-      </div>
-      <div class="stickman-legs">
-        <div class="stickman-leg"></div>
-        <div class="stickman-leg"></div>
-      </div>
-    </div>
-  </div>
-</div> -->
 
         <!-- Game List Button Only -->
         <div class="game-list">
@@ -107,6 +90,7 @@
     <h1 class="title">Available Games</h1>
     <div class="games-list-plain">
       <button id="play-ttt-from-list" class="btn neon big">Tic Tac Toe</button>
+      <button id="play-uno-from-list" class="btn neon big">UNO</button>
     </div>
     <div style="margin-top:14px;">
       <button id="back-home" class="btn neon ghost">Back</button>
@@ -136,6 +120,11 @@
     </div>
 
     <div id="ttt-grid" class="ttt-grid"></div>
+  </section>
+
+  <!-- UNO Screen -->
+  <section id="screen-uno" class="screen hidden">
+    <!-- UNO game will be rendered here by JavaScript -->
   </section>
 
   <!-- Floating chat button (hidden on home) with unread badge -->
