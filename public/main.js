@@ -1,6 +1,7 @@
 // main.js (ES module)
 import { initChat, openChatPanelExternally, isChatOpen, showUnreadOnFloating, closeChatOverlay, loadChatHistory } from "./chat.js";
 import { initTicTacToe, destroyTicTacToe } from "./games/tictactoe.js";
+import { initUno, destroyUno } from "./games/uno.js";
 
 const socket = io();
 
@@ -12,6 +13,7 @@ const screenHome = q("#screen-home");
 const screenGames = q("#screen-games");
 const screenTTT = q("#screen-ttt");
 const screenDetail = q("#screen-game-detail");
+const screenUno = q("#screen-uno");
 
 // role buttons
 const btnImmu = q("#btn-immu");
@@ -27,6 +29,7 @@ const detailRules = q("#detail-rules");
 const requestPlayBtn = q("#request-play-btn");
 const detailBackBtn = q("#detail-back");
 const playTttFromList = q("#play-ttt-from-list");
+const playUnoFromList = q("#play-uno-from-list");
 
 // ttt controls
 const tttTitle = q("#ttt-title");
@@ -66,15 +69,17 @@ let pendingRequest = false;
 function show(el) { el.classList.remove("hidden"); }
 function hide(el) { el.classList.add("hidden"); }
 function gotoRole() {
-  hide(screenHome); hide(screenGames); hide(screenTTT); hide(screenDetail);
+  hide(screenHome); hide(screenGames); hide(screenTTT); hide(screenDetail); hide(screenUno);
   destroyTicTacToe();
+  destroyUno();
   hide(floatingChat);
   show(screenRole);
 }
 function gotoHome() {
   currentGame = null;
   destroyTicTacToe();
-  hide(screenRole); hide(screenGames); hide(screenTTT); hide(screenDetail);
+  destroyUno();
+  hide(screenRole); hide(screenGames); hide(screenTTT); hide(screenDetail); hide(screenUno);
   show(screenHome);
   hide(floatingChat);
   closeChatOverlay();
@@ -86,12 +91,13 @@ function gotoHome() {
 function gotoGames() {
   currentGame = null;
   destroyTicTacToe();
-  hide(screenRole); hide(screenHome); hide(screenTTT); hide(screenDetail);
+  destroyUno();
+  hide(screenRole); hide(screenHome); hide(screenTTT); hide(screenDetail); hide(screenUno);
   show(screenGames);
   hide(floatingChat);
 }
 function gotoGameDetail(game) {
-  hide(screenRole); hide(screenHome); hide(screenTTT); hide(screenGames);
+  hide(screenRole); hide(screenHome); hide(screenTTT); hide(screenGames); hide(screenUno);
   show(screenDetail);
   hide(floatingChat);
   if (game === "tictactoe") {
@@ -102,6 +108,15 @@ function gotoGameDetail(game) {
       <p style="margin-top:12px;">Click Request Play to invite the other player.</p>
     `;
     requestPlayBtn.dataset.game = "tictactoe";
+  } else if (game === "uno") {
+    detailTitle.textContent = "UNO";
+    detailRules.innerHTML = `
+      <p>Classic UNO card game for two players. Match cards by color or number.</p>
+      <p>Special cards: Skip (Ø), Reverse (↺), Draw 2 (+2), Wild (W), Wild Draw 4 (W4).</p>
+      <p>First player to get rid of all cards wins. Don't forget to say UNO when you have one card left!</p>
+      <p style="margin-top:12px;">Click Request Play to invite the other player.</p>
+    `;
+    requestPlayBtn.dataset.game = "uno";
   }
   
   // Update request button state based on connection status
@@ -109,8 +124,14 @@ function gotoGameDetail(game) {
 }
 function gotoTTT() {
   currentGame = "ttt";
-  hide(screenRole); hide(screenHome); hide(screenGames); hide(screenDetail);
+  hide(screenRole); hide(screenHome); hide(screenGames); hide(screenDetail); hide(screenUno);
   show(screenTTT);
+  show(floatingChat);
+}
+function gotoUno() {
+  currentGame = "uno";
+  hide(screenRole); hide(screenHome); hide(screenGames); hide(screenDetail); hide(screenTTT);
+  show(screenUno);
   show(floatingChat);
 }
 
@@ -308,13 +329,20 @@ socket.on("game:selectionDenied", ({ by }) => {
 });
 socket.on("game:start", ({ players, state, gameName }) => {
   pendingRequest = false;
-  gotoTTT();
-  initTicTacToe(socket, myRole);
+  
+  if (gameName === "tictactoe") {
+    gotoTTT();
+    initTicTacToe(socket, myRole);
+  } else if (gameName === "uno") {
+    gotoUno();
+    initUno(socket, myRole);
+  }
+  
   showBannerMessage("Game started!");
   fixLayout();
 });
 
-// leave game - UPDATED HANDLING
+// leave game
 btnLeave.addEventListener("click", async () => {
   if (pendingRequest) return;
   const ok = await askConfirm("Leave game", "Are you sure? This will return both players to the home screen.");
@@ -322,8 +350,6 @@ btnLeave.addEventListener("click", async () => {
   pendingRequest = true;
   socket.emit("game:leave", {});
 });
-
-// UPDATED: Player left handling
 socket.on("game:playerLeft", ({ who, duringGame }) => {
   pendingRequest = false;
   showBannerMessage(`${who} left the game`);
@@ -339,15 +365,7 @@ socket.on("opponent:left", ({ who }) => {
   showBannerMessage(`${who} left the game`);
 });
 
-// UPDATED: Ensure we always return to home on leave
-socket.on("game:returnToList", () => {
-  setTimeout(() => {
-    gotoHome();
-    fixLayout();
-  }, 400);
-});
-
-// restart
+// Tic Tac Toe restart
 btnReset.addEventListener("click", async () => {
   if (pendingRequest) return;
   const ok = await askConfirm("Request restart", "The other player needs to accept.");
@@ -362,6 +380,33 @@ socket.on("ttt:restartOffer", async ({ rid, fromRole }) => {
 socket.on("ttt:restartPending", () => showBannerMessage("Restart requested — waiting"));
 socket.on("ttt:restartDenied", ({ by }) => { pendingRequest = false; showBannerMessage(`${by} denied restart`); });
 socket.on("ttt:restartAccepted", () => { pendingRequest = false; showBannerMessage("Restart accepted — board reset"); });
+
+// UNO restart handlers
+socket.on("uno:restartOffer", async ({ rid, fromRole }) => {
+  const accept = await askConfirm("Restart requested", `${fromRole === "immu" ? "Immu" : "Cookie"} asked to restart. Accept?`);
+  socket.emit("uno:restartResponse", { rid, accept });
+});
+socket.on("uno:restartPending", () => showBannerMessage("Restart requested — waiting"));
+socket.on("uno:restartDenied", ({ by }) => { pendingRequest = false; showBannerMessage(`${by} denied restart`); });
+socket.on("uno:restartAccepted", () => { pendingRequest = false; showBannerMessage("Restart accepted — new game started"); });
+
+// UNO game events
+socket.on("uno:penalty", ({ player, reason }) => {
+  if (reason === "forgot_uno") {
+    showBannerMessage(`${player === "immu" ? "Immu" : "Cookie"} forgot to say UNO! +2 cards`);
+  }
+});
+socket.on("uno:timeout", ({ player }) => {
+  showBannerMessage(`${player === "immu" ? "Immu" : "Cookie"} took too long! +2 cards`);
+});
+
+// game return after over
+socket.on("game:returnToList", () => {
+  setTimeout(() => {
+    gotoHome();
+    fixLayout();
+  }, 400);
+});
 
 // chat send wiring
 chatSend.addEventListener("click", () => {
@@ -398,6 +443,13 @@ if (detailBackBtn) detailBackBtn.addEventListener("click", () => {
 if (playTttFromList) {
   playTttFromList.addEventListener("click", () => {
     gotoGameDetail("tictactoe");
+    fixLayout();
+  });
+}
+
+if (playUnoFromList) {
+  playUnoFromList.addEventListener("click", () => {
+    gotoGameDetail("uno");
     fixLayout();
   });
 }
